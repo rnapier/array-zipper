@@ -1,58 +1,29 @@
-final class Box<T> {
-    let value: T
-    init(_ value: T) { self.value = value }
-}
+import Swift
 
-enum List<T> {
-    case Cons(Box<T>, Box<List>)
+enum List<Element> {
+    indirect case Cons(Element, List)
     case Nil
 
-    init(_ first: T, _ rest: List<T>) {
-        self = Cons(Box(first), Box(rest))
-    }
-}
-
-extension List {
-    func first() -> T? {
-        switch self {
-        case let Cons(first, _): return first.value
-        case Nil: return nil
-        }
+    init(_ first: Element, _ rest: List<Element>) {
+        self = Cons(first, rest)
     }
 
-    func rest() -> List<T> {
+    var rest: List<Element> {
         switch self {
-        case let Cons(_, rest): return rest.value
-        case Nil: return .Nil
+        case let .Cons(_, rest): return rest
+        case .Nil: return .Nil
         }
     }
 }
-
-//extension List : SequenceType {
-//    func generate() -> GeneratorOf<T> {
-//        var node = self
-//        return GeneratorOf {
-//            let result = node.first()
-//            node = node.rest()
-//            return result
-//        }
-//    }
-//}
-
-//extension List : SequenceType {
-//    func generate() -> IndexingGenerator<List> {
-//        return IndexingGenerator(self)
-//    }
-//}
 
 extension List : SequenceType {
-    func generate() -> GeneratorOf<T> {
+    func generate() -> AnyGenerator<Element> {
         var node = self
-        return GeneratorOf {
+        return AnyGenerator {
             switch node {
             case let .Cons(first, rest):
-                node = rest.value
-                return first.value
+                node = rest
+                return first
             case .Nil:
                 return nil
             }
@@ -60,34 +31,21 @@ extension List : SequenceType {
     }
 }
 
-
-// Integer indexing
-extension List {
-    subscript (i: Int) -> T? {
-        return self.nth(i).first()
-    }
-    func nth (i: Int) -> List {
-        var node = self
-        for _ in 0 ..< i { node = node.rest() }
-        return node
-    }
-}
-
-struct ListIndex<T> {
-    static var End: ListIndex<T> {
+struct ListIndex<Element> {
+    static var End: ListIndex<Element> {
         return ListIndex(node: .Nil, offset: -1)
     }
-    static func Start(list: List<T>) -> ListIndex<T> {
+    static func Start(list: List<Element>) -> ListIndex<Element> {
         return ListIndex(node: list, offset: 0)
     }
 
-    let node: List<T>
+    let node: List<Element>
     let offset: Int
 }
 
 extension ListIndex : ForwardIndexType {
     func successor() -> ListIndex {
-        let rest = self.node.rest()
+        let rest = self.node.rest
         switch rest {
         case .Cons: return ListIndex(node: rest, offset: self.offset + 1)
         case .Nil: return .End
@@ -99,97 +57,73 @@ func == <T>(lhs: ListIndex<T>, rhs: ListIndex<T>) -> Bool {
     return lhs.offset == rhs.offset
 }
 
-extension ListIndex : Printable {
+extension ListIndex : CustomStringConvertible {
     var description : String {
         return "(\(self.node), \(self.offset))"
     }
 }
 
 extension List : CollectionType {
-    typealias Index = ListIndex<T>
+    typealias Index = ListIndex<Element>
     var startIndex: Index { return .Start(self) }
     var endIndex: Index { return .End }
 
-    subscript (i: Index) -> T {
-        return i.node.first()!
+    subscript (i: Index) -> Element {
+        return i.node.first!
     }
 }
 
-extension List : Printable {
+extension List : CustomStringConvertible {
     var description : String {
-        return "\(Array(self))"
+        // FIXME: Creates an infinite loop in Playgrounds (not live code) in Xcode 7.3collecti
+        //        return("\(Array(self))")
+        return "LIST"
     }
 }
 
 extension List {
-    init<G: GeneratorType where G.Element == T>(var generator: G) {
-        self = generator.next().map
-            { Cons(Box($0), Box(List(generator: generator))) }
+    init<G: GeneratorType where G.Element == Element>(generator: G) {
+        var g = generator
+        self = g.next().map
+            { Cons($0, List(generator: g)) }
             ?? .Nil
     }
 
-    init<S: SequenceType where S.Generator.Element == T>(elements: S) {
+    init<S: SequenceType where S.Generator.Element == Element>(elements: S) {
         self = List(generator: elements.generate())
     }
 }
 
-struct ListSlice<T> {
-    let list: List<T>
-    let bounds: Range<List<T>.Index>
-    func first() -> T? { return self.startIndex.node.first() }
-    func rest() -> List<T> { return self.startIndex.node.rest() }
-}
-
-extension ListSlice : CollectionType {
-    typealias Index = List<T>.Index
-    var startIndex: Index { return self.bounds.startIndex }
-    var endIndex: Index { return self.bounds.endIndex }
-    subscript (i: Index) -> T { return i.node.first()! }
-    func generate() -> IndexingGenerator<ListSlice> {
-        return IndexingGenerator(self)
-    }
-}
-
-extension ListSlice : Sliceable {
-    typealias SubSlice = ListSlice<T>
-    subscript (bounds: Range<Index>) -> ListSlice<T> {
-        return ListSlice(list: self.list, bounds: bounds)
-    }
-}
-
-extension ListSlice : Printable {
-    var description : String {
-        return "\(Array(self))"
-    }
-}
-
-extension List : Sliceable {
-    typealias SubSlice = ListSlice<T>
-    subscript (bounds: Range<Index>) -> ListSlice<T> {
-        return ListSlice(list: self, bounds: bounds)
-    }
-}
-
 let z = List(elements: [1,2,3])
-for x in z { println(x) }
+var g = z.generate()
+g.next()
+let x = Array(z)
+
+for x in z {
+    print(x)
+}
+
 
 let l = List(1, List(2, List(3, .Nil)))
+
 l.description
 for x in l {
-    println(x)
+    print(x)
 }
 
-for x in zip(l, indices(l)) { println(x) }
-
-l[1]
+for x in zip(l, l.indices) { print(x) }
 
 let m = List(10, List(20, .Nil))
-let i = find(l, 2)!
+let i = l.indexOf(2)!
 m[i]
 
-Array(l)
 
-dropFirst(l).first()
-println(dropFirst(l).rest())
-println(dropFirst(l))
-//println(l[1..<2])
+l.dropFirst().first
+print(l.dropFirst().dropFirst())
+print(l.dropFirst())
+
+extension List {
+    subscript(offset i: Int) -> Element? {
+        return self.dropFirst(i).first
+    }
+}

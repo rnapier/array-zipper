@@ -31,8 +31,10 @@ for x in e {
     fatalError("This should never run")
 }
 
-func dropFirst<S: SequenceType>(seq: S) -> SequenceOf<S.Generator.Element> {
+func dropFirst<S: SequenceType>(seq: S) -> AnySequence<S.Generator.Element> {
     var g = seq.generate()
     let _ = g.next()
-    return SequenceOf { g }
+    return AnySequence{ g }
 }
+
+1 ... 6

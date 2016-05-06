@@ -11,33 +11,17 @@ var e = MyEmptyGenerator<Int>()
 e.next()
 e.next()
 
-struct MyGeneratorOfOne<T> : GeneratorType {
-    var element: T?
-    init(_ element: T?) { self.element = element }
+struct MyGeneratorOfOne<Element> : GeneratorType {
+    var element: Element?
+    init(_ element: Element?) { self.element = element }
 
-    mutating func next() -> T? {
-        let result = self.element
-        self.element = nil
-        return result
+    mutating func next() -> Element? {
+        defer { element = nil }
+        return element
     }
 }
 
-struct MyGeneratorOfOne2<T> : GeneratorType {
-    var element: T?
-    var done = false
-    init(_ element: T?) { self.element = element }
-
-    mutating func next() -> T? {
-        precondition(!done, "Generator exhausted")
-        let result = self.element
-        self.element = nil
-        self.done = (result == nil)
-        return result
-    }
-}
-
-
-var o:MyGeneratorOfOne2<Int> = MyGeneratorOfOne2(1)
+var o = MyGeneratorOfOne(1)
 o.next()
 o.next()
 
@@ -50,7 +34,8 @@ g.next()
 struct NaturalGenerator : GeneratorType {
     var n = 0
     mutating func next() -> Int? {
-        return n++
+        n += 1
+        return n
     }
 }
 
@@ -58,29 +43,16 @@ var nats = NaturalGenerator()
 nats.next()
 
 
-func withoutOutliers<S: SequenceType where S.Generator.Element : Comparable>(xs: S) -> [S.Generator.Element]{
-    let mn = minElement(xs)
-    let mx = maxElement(xs)
-
-    return filter(xs) { $0 != mn && $0 != mx }
-}
-
-withoutOutliers([1,2,3,2,1])
-
 struct RandomGenerator : GeneratorType {
-    let limit: UInt32
     var n: Int
+    let limit: UInt32
 
     mutating func next() -> UInt32? {
         if n > 0 {
-            --n
+            n -= 1
             return arc4random_uniform(limit)
         }
         return nil
-    }
-    init(n: Int, limit: UInt32) {
-        self.limit = limit
-        self.n = n
     }
 }
 
@@ -88,11 +60,14 @@ var r = RandomGenerator(n: 1, limit: UInt32(100))
 r.next()
 r.next()
 
-func makeNaturalGenerator() -> GeneratorOf<Int> {
+func makeNaturalGenerator() -> AnyGenerator<Int> {
     var n = 0
-    return GeneratorOf{ return n++ }
+    return AnyGenerator{
+        n += 1
+        return n
+    }
 }
 
-func makeNaturalGenerator2() -> GeneratorOf<Int> {
-    return GeneratorOf(NaturalGenerator())
+func makeNaturalGenerator2() -> AnyGenerator<Int> {
+    return AnyGenerator(NaturalGenerator())
 }

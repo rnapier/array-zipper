@@ -2,21 +2,35 @@
 
 import Swift
 
-struct MyEmptySequence<T> : SequenceType {
-    func generate() -> EmptyGenerator<T> {
+func withoutMinMax<Seq: SequenceType
+    where Seq.Generator.Element : Comparable>
+    (xs: Seq) -> [Seq.Generator.Element]{
+
+    guard let
+        mn = xs.minElement(),
+        mx = xs.maxElement()
+        else { return [] }
+
+    return xs.filter { $0 != mn && $0 != mx }
+}
+
+struct MyEmptySequence<Element> : SequenceType {
+    func generate() -> EmptyGenerator<Element> {
         return EmptyGenerator()
     }
 }
 
-let es = MyEmptySequence<Int>()
-for x in es {
+for x in MyEmptySequence<Int>() {
     fatalError("This should never run")
 }
 
 struct NaturalSequence : SequenceType {
-    func generate() -> GeneratorOf<Int> {
+    func generate() -> AnyGenerator<Int> {
         var n = 0
-        return GeneratorOf{ n++ }
+        return AnyGenerator{
+            n += 1
+            return n
+        }
     }
 }
 
@@ -33,35 +47,95 @@ func take<Seq: SequenceType>(n: Int, xs: Seq) -> [Seq.Generator.Element] {
     return result
 }
 
-take(10, NaturalSequence())
+take(10, xs: NaturalSequence())
 
-let nats = SequenceOf { () -> GeneratorOf<Int> in
+let nats = AnySequence { () -> AnyGenerator<Int> in
     var n = 0
-    return GeneratorOf { n++ }
+    return AnyGenerator {
+        n += 1
+        return n
+    }
 }
-take(10, nats)
+take(10, xs: nats)
 
-
-func drop<Seq: SequenceType>(n: Int, xs: Seq) -> SequenceOf<Seq.Generator.Element> {
-    var g = xs.generate()
-    for _ in 1...n { g.next() }
-    return SequenceOf{g}
+extension SequenceType {
+    func drop(n: Int) -> AnySequence<Generator.Element> {
+        var g = generate()
+        for _ in 1...n { g.next() }
+        return AnySequence{g}
+    }
 }
 
-Array(drop(2, [1,2,3]))
+Array([1,2,3].drop(2))
 
-underestimateCount(nats)
+nats.underestimateCount()
 
 func myCount<Seq: SequenceType>(xs: Seq) -> Int {
-    return reduce(xs, 0) { (n, _) in n + 1 }
+    return xs.reduce(0) { (n, _) in n + 1 }
 }
 
 func myCount2<Seq: SequenceType>(xs: Seq) -> Int {
     var n = 0
-    for _ in xs { ++n }
+    for _ in xs { n += 1 }
     return n
 }
 
-underestimateCount(NaturalSequence())
+NaturalSequence().underestimateCount()
 
 
+internal class _DropFirstSequence<Base : GeneratorType>
+: SequenceType, GeneratorType {
+
+    internal var generator: Base
+    internal let limit: Int
+    internal var dropped: Int
+
+    internal init(_ generator: Base, limit: Int, dropped: Int = 0) {
+        self.generator = generator
+        self.limit = limit
+        self.dropped = dropped
+    }
+
+    internal func generate() -> _DropFirstSequence<Base> {
+        return self
+    }
+
+    internal func next() -> Base.Element? {
+        while dropped < limit {
+            if generator.next() == nil {
+                dropped = limit
+                return nil
+            }
+            dropped += 1
+        }
+        return generator.next()
+    }
+
+    internal func dropFirst(n: Int) -> AnySequence<Base.Element> {
+        // If this is already a _DropFirstSequence, we need to fold in
+        // the current drop count and drop limit so no data is lost.
+        //
+        // i.e. [1,2,3,4].dropFirst(1).dropFirst(1) should be equivalent to
+        // [1,2,3,4].dropFirst(2).
+        return AnySequence(
+            _DropFirstSequence(generator, limit: limit + n, dropped: dropped))
+    }
+}
+
+
+extension SequenceType where
+    SubSequence : SequenceType,
+    SubSequence.Generator.Element == Generator.Element
+{
+
+    /// Returns a subsequence containing all but the first `n` elements.
+    ///
+    /// - Requires: `n >= 0`
+    /// - Complexity: O(`n`)
+    @warn_unused_result
+    public func mydropFirst(n: Int) -> AnySequence<Generator.Element> {
+        _precondition(n >= 0, "Can't drop a negative number of elements from a sequence")
+        if n == 0 { return AnySequence(self) }
+        return AnySequence(_DropFirstSequence(generate(), limit: n))
+    }
+}
